@@ -1,8 +1,8 @@
-shap==0.44.0
-xgboost==2.0.3
-scikit-learn==1.4.2
-streamlit==1.37.1
-pandas==2.2.2
-numpy==1.26.4
-matplotlib==3.9.0
-joblib==1.4.2
+streamlit
+shap
+xgboost
+scikit-learn
+pandas
+numpy
+matplotlib
+joblib
