@@ -156,7 +156,6 @@ thr = st.sidebar.slider("Classification threshold", 0.0, 1.0, float(BEST_THRESHO
 show_shap = st.sidebar.checkbox("Show SHAP waterfall", value=True)
 # ---------------------- Main ----------------------
 st.title("Caregiver Stress Risk — ML Calculator")
-st.caption("Enter features → transform via preprocessor → probability, risk label, and SHAP explanation.")
 
 st.subheader("Enter features")
 with st.form("single_form"):
