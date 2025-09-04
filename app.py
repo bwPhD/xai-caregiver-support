@@ -61,8 +61,8 @@ VARIABLE_LABELS_DICT = {
     'healthG': 'Self-rated health (Caregiver)',
     'ageR'   : 'Age (Recipient)',
     'adlG'   : 'ADL (Caregiver)',
-    'hukou_cityR': 'Hukou (Recipient)',
-    'is_citycentre': 'Central-city residence (Recipient)'
+    'hukou_cityR': 'Hukou status (Recipient)',
+    'is_citycentre': 'City-center residence (Recipient)'
 }
 
 VALUE_MAPPINGS = {
