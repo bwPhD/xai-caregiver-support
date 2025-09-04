@@ -31,7 +31,7 @@ st.markdown(
 feature_ranges = {
     "daydurG": {"type": "numerical", "min": 0.0, "max": 24,  "default": 12},     # hours/day
     "age_G"  : {"type": "numerical", "min": 0,   "max": 120, "default": 60.0},   # caregiver age
-    "ageR"   : {"type": "numerical", "min": 0,   "max": 120, "default": 60.0},   # recipient age
+    "ageR"   : {"type": "numerical", "min": 60,   "max": 120, "default": 60.0},   # recipient age
     "caredurG": {"type": "numerical", "min": 0,  "max": 120, "default": 60.0},   # caregiving years
     "healthR": {"type": "categorical", "options": [1, 5]},
     "healthG": {"type": "categorical", "options": [1, 5]},
