@@ -1,14 +1,3 @@
-# -*- coding: utf-8 -*-
-# ===============================================================
-# Streamlit single-page app (English-only, GitHub-ready)
-# - Loads ColumnTransformer preprocessor (preprocessor.pkl)
-# - Loads best model (XGBoost, possibly wrapped by CalibratedClassifierCV)
-# - UI is driven by feature_ranges below
-# - Predicts probability and renders a concise risk narrative
-# - SHAP waterfall plot with human-friendly labels and mapped categorical values
-# - Minimal on-screen text for clean embedding in GitHub/Streamlit Cloud
-# ===============================================================
-
 import os
 import json
 import joblib
@@ -167,7 +156,6 @@ thr = st.sidebar.slider("Classification threshold", 0.0, 1.0, float(BEST_THRESHO
 show_shap = st.sidebar.checkbox("Show SHAP waterfall", value=True)
 # ---------------------- Main ----------------------
 st.title("Caregiver Stress Risk — ML Calculator")
-st.caption("Enter features → transform via preprocessor → probability, risk label, and SHAP explanation.")
 
 st.subheader("Enter features")
 with st.form("single_form"):
