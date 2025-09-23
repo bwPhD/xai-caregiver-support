@@ -224,20 +224,7 @@ if submitted:
         st.markdown(paragraph)
         st.markdown("<div class='small-note'>This is a screening aid, not a diagnosis.</div>", unsafe_allow_html=True)
 
-        # 4) input echo (labeled)
-        disp_rows = []
-        for k in FINAL_FEATURES:
-            label_k = VARIABLE_LABELS_DICT.get(k, k)
-            v = df_single_orig.iloc[0][k]
-            if k in VALUE_MAPPINGS and v in VALUE_MAPPINGS[k]:
-                disp_rows.append({"Feature": label_k, "Value": f"{v} - {VALUE_MAPPINGS[k][v]}"})
-            else:
-                unit = UNITS.get(k)
-                disp_rows.append({"Feature": label_k, "Value": f"{v} {unit}" if unit else v})
-        st.markdown("**Input summary**")
-        st.dataframe(pd.DataFrame(disp_rows))
-
-        # 5) SHAP waterfall (single case)
+        # 4) SHAP waterfall (single case)
         if show_shap:
             st.subheader("SHAP waterfall (single case)")
             # Model is CalibratedClassifierCV; unwrap to the underlying tree estimator
