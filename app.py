@@ -623,7 +623,7 @@ RECIPIENT_CAT = {
         "options": [0, 3],
         "default": 2,
         "label": "ADL Disability",
-        "help": "ADL levels: 0 intact (100), 1 mild (65–95), 2 moderate (45–60), 3 severe (≤40).",
+        "help": "ADL level based on the Barthel Index: 0 intact (100), 1 mild (65–95), 2 moderate (45–60), 3 severe (≤40).",
         "map": {
             0: "Intact",
             1: "Mild",
