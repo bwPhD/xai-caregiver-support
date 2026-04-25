@@ -1,12 +1,13 @@
 {
-  "XGBoost": 0.6308441638946534,
-  "Logistic Regression": 0.6320399892446528,
-  "Random Forest": 0.6394270764758072,
-  "ExtraTrees": 0.6512154973295289,
-  "LightGBM": 0.6374697597269272,
-  "CatBoost": 0.6488825490291007,
-  "SVC": 0.6388973946964186,
-  "Gradient Boosting": 0.6546428591330431,
-  "AdaBoost": 0.663213514119503,
-  "KNN": 0.6489240157068416
+  "colsample_bytree": 0.95,
+  "gamma": 1.73538012281705,
+  "grow_policy": "depthwise",
+  "learning_rate": 0.01,
+  "max_depth": 6,
+  "min_child_weight": 1,
+  "n_estimators": 2500,
+  "reg_alpha": 1.0,
+  "reg_lambda": 3.9669150491965572,
+  "scale_pos_weight": 0.17903335602450646,
+  "subsample": 0.7059453531286489
 }
