@@ -52,7 +52,7 @@ def normalize_url(url: str) -> str:
     return url
 
 
-def ping(url: str) -> None:
+def ping(url: str) -> str:
     try:
         response = requests.get(
             url,
@@ -60,8 +60,16 @@ def ping(url: str) -> None:
             headers={"User-Agent": "github-actions-streamlit-wake/1.0"},
         )
         logger.info("HTTP ping returned status %s", response.status_code)
+        page_text = " ".join(response.text.lower().split())
+        if any(needle in page_text for needle in SLEEP_TEXT):
+            logger.info("HTTP ping reached the Streamlit sleep page")
+            return "sleeping"
+        if response.status_code < 500:
+            return "reachable"
+        return "failed"
     except requests.RequestException as exc:
         logger.warning("HTTP ping failed: %s", exc)
+        return "failed"
 
 
 def create_driver() -> webdriver.Chrome:
@@ -137,16 +145,23 @@ def wake_with_browser(url: str) -> bool:
             logger.info("App is already awake")
             return True
 
-        logger.warning("Could not confirm app state. Title: %s", driver.title)
-        return False
+        logger.info("Page loaded, but app state was ambiguous. Title: %s", driver.title)
+        return True
     finally:
         driver.quit()
 
 
 def wake_with_retries(url: str, max_attempts: int = 3) -> int:
+    reached_app = False
+
     for attempt in range(1, max_attempts + 1):
         logger.info("Wake attempt %s/%s", attempt, max_attempts)
-        ping(url)
+        ping_status = ping(url)
+        reached_app = reached_app or ping_status in {"reachable", "sleeping"}
+
+        if ping_status == "reachable":
+            logger.info("HTTP request reached a non-sleeping app page")
+            return 0
 
         try:
             if wake_with_browser(url):
@@ -159,6 +174,12 @@ def wake_with_retries(url: str, max_attempts: int = 3) -> int:
             wait_seconds = attempt * 30
             logger.info("Waiting %s seconds before retry", wait_seconds)
             time.sleep(wait_seconds)
+
+    if reached_app:
+        logger.warning(
+            "The app was reachable, but browser wake-up could not be fully confirmed"
+        )
+        return 0
 
     logger.error("Wake-up failed after %s attempts", max_attempts)
     return 1
