@@ -1,241 +1,179 @@
 #!/usr/bin/env python3
-"""
-Streamlit 应用自动唤醒脚本
-使用 Selenium 模拟真实用户访问，保持应用活跃状态
-"""
+"""Wake a Streamlit Community Cloud app from GitHub Actions."""
 
+from __future__ import annotations
+
+import logging
 import os
 import sys
 import time
-import logging
-from datetime import datetime
+from pathlib import Path
+
+import requests
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException, WebDriverException
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import TimeoutException, WebDriverException
-from webdriver_manager.chrome import ChromeDriverManager
-import requests
 
-class StreamlitWakeUp:
-    def __init__(self, app_url, max_retries=3, timeout=30):
-        self.app_url = app_url
-        self.max_retries = max_retries
-        self.timeout = timeout
-        self.setup_logging()
 
-    def setup_logging(self):
-        """设置日志记录"""
-        log_dir = os.path.join(os.path.dirname(__file__), '..', 'logs')
-        os.makedirs(log_dir, exist_ok=True)
+ROOT = Path(__file__).resolve().parents[1]
+LOG_DIR = ROOT / "logs"
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
-        log_file = os.path.join(log_dir, 'wake_up.log')
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(message)s",
+    handlers=[
+        logging.FileHandler(LOG_DIR / "wake_up.log", encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+logger = logging.getLogger("wake-streamlit")
 
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(log_file, encoding='utf-8'),
-                logging.StreamHandler(sys.stdout)
-            ]
+WAKE_BUTTON_TEXT = (
+    "get this app back up",
+    "wake it back up",
+    "wake this app",
+)
+SLEEP_TEXT = (
+    "gone to sleep",
+    "due to inactivity",
+    "get this app back up",
+)
+
+
+def normalize_url(url: str) -> str:
+    url = url.strip()
+    if not url:
+        raise ValueError("STREAMLIT_URL is empty")
+    if not url.startswith(("http://", "https://")):
+        url = f"https://{url}"
+    return url
+
+
+def ping(url: str) -> None:
+    try:
+        response = requests.get(
+            url,
+            timeout=30,
+            headers={"User-Agent": "github-actions-streamlit-wake/1.0"},
         )
-        self.logger = logging.getLogger(__name__)
+        logger.info("HTTP ping returned status %s", response.status_code)
+    except requests.RequestException as exc:
+        logger.warning("HTTP ping failed: %s", exc)
 
-    def create_driver(self):
-        """创建 Chrome WebDriver"""
-        try:
-            chrome_options = Options()
-            chrome_options.add_argument('--headless')  # 无头模式
-            chrome_options.add_argument('--no-sandbox')
-            chrome_options.add_argument('--disable-dev-shm-usage')
-            chrome_options.add_argument('--disable-gpu')
-            chrome_options.add_argument('--window-size=1920,1080')
-            chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
 
-            # 在 GitHub Actions 中使用系统 Chrome
-            if os.getenv('GITHUB_ACTIONS'):
-                chrome_options.add_argument('--disable-web-security')
-                chrome_options.add_argument('--allow-running-insecure-content')
+def create_driver() -> webdriver.Chrome:
+    options = Options()
+    options.add_argument("--headless=new")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1440,1200")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--disable-infobars")
+    options.add_argument(
+        "--user-agent=Mozilla/5.0 (X11; Linux x86_64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
 
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver = webdriver.Chrome(options=options)
+    driver.set_page_load_timeout(90)
+    return driver
 
-            self.logger.info("Chrome WebDriver 创建成功")
-            return driver
 
-        except Exception as e:
-            self.logger.error(f"创建 WebDriver 失败: {str(e)}")
-            raise
+def find_wake_button(driver: webdriver.Chrome):
+    buttons = driver.find_elements(By.TAG_NAME, "button")
+    for button in buttons:
+        text = " ".join(button.text.lower().split())
+        if any(needle in text for needle in WAKE_BUTTON_TEXT):
+            return button
+    return None
 
-    def wait_for_page_load(self, driver):
-        """等待页面加载完成"""
-        try:
-            # 等待 Streamlit 应用的标志性元素出现
-            WebDriverWait(driver, self.timeout).until(
-                lambda d: d.execute_script('return document.readyState') == 'complete'
+
+def page_looks_awake(driver: webdriver.Chrome) -> bool:
+    page_text = " ".join(driver.page_source.lower().split())
+    if any(needle in page_text for needle in SLEEP_TEXT):
+        return False
+
+    app_selectors = (
+        '[data-testid="stApp"]',
+        '[data-testid="stSidebar"]',
+        ".stApp",
+        "main",
+    )
+    return any(driver.find_elements(By.CSS_SELECTOR, selector) for selector in app_selectors)
+
+
+def wake_with_browser(url: str) -> bool:
+    driver = create_driver()
+    try:
+        logger.info("Opening %s", url)
+        driver.get(url)
+        WebDriverWait(driver, 45).until(
+            lambda current_driver: current_driver.execute_script(
+                "return document.readyState"
             )
+            == "complete"
+        )
+        time.sleep(5)
 
-            # 等待 Streamlit 特有的元素
-            selectors_to_try = [
-                'div[data-testid="stApp"]',
-                '.main',
-                'body',
-                'div[data-testid="stSidebar"]'
-            ]
-
-            for selector in selectors_to_try:
-                try:
-                    element = WebDriverWait(driver, 10).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
-                    )
-                    self.logger.info(f"找到页面元素: {selector}")
-                    break
-                except TimeoutException:
-                    continue
-            else:
-                self.logger.warning("未找到预期的页面元素，但页面似乎已加载")
-
-        except TimeoutException:
-            self.logger.error("页面加载超时")
-            raise
-
-    def interact_with_app(self, driver):
-        """与应用进行交互以确保完全唤醒"""
-        try:
-            # 轻微滚动页面
-            driver.execute_script("window.scrollTo(0, 100);")
+        button = find_wake_button(driver)
+        if button is not None:
+            logger.info("Sleep page detected; clicking wake button")
+            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", button)
             time.sleep(1)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(1)
+            button.click()
 
-            # 尝试点击页面上的交互元素
-            try:
-                # 查找可能的按钮或输入框
-                clickable_elements = driver.find_elements(By.CSS_SELECTOR,
-                    'button, input[type="text"], input[type="number"], textarea, select')
+            WebDriverWait(driver, 180).until(
+                lambda current_driver: page_looks_awake(current_driver)
+            )
+            logger.info("App appears awake after button click")
+            return True
 
-                if clickable_elements:
-                    # 点击第一个可点击元素（如果安全的话）
-                    first_element = clickable_elements[0]
-                    if first_element.is_displayed() and first_element.is_enabled():
-                        # 记录元素信息但不实际点击，避免意外操作
-                        self.logger.info(f"发现可点击元素: {first_element.tag_name} - {first_element.get_attribute('class') or 'no-class'}")
-            except Exception as e:
-                self.logger.info(f"元素交互检查完成 (无需操作): {str(e)}")
+        if page_looks_awake(driver):
+            logger.info("App is already awake")
+            return True
 
-            # 等待应用完全响应
-            time.sleep(3)
+        logger.warning("Could not confirm app state. Title: %s", driver.title)
+        return False
+    finally:
+        driver.quit()
 
-            self.logger.info("应用交互完成")
 
-        except Exception as e:
-            self.logger.warning(f"应用交互过程中出现问题: {str(e)}")
+def wake_with_retries(url: str, max_attempts: int = 3) -> int:
+    for attempt in range(1, max_attempts + 1):
+        logger.info("Wake attempt %s/%s", attempt, max_attempts)
+        ping(url)
 
-    def check_app_health(self):
-        """通过 HTTP 请求检查应用健康状态"""
         try:
-            response = requests.get(self.app_url, timeout=10)
-            if response.status_code == 200:
-                self.logger.info(f"应用健康检查通过 - 状态码: {response.status_code}")
-                return True
-            else:
-                self.logger.warning(f"应用健康检查失败 - 状态码: {response.status_code}")
-                return False
-        except Exception as e:
-            self.logger.warning(f"应用健康检查异常: {str(e)}")
-            return False
+            if wake_with_browser(url):
+                logger.info("Wake-up completed successfully")
+                return 0
+        except (TimeoutException, WebDriverException, RuntimeError) as exc:
+            logger.warning("Wake attempt failed: %s", exc)
 
-    def wake_up_app(self):
-        """执行唤醒操作"""
-        self.logger.info(f"开始唤醒 Streamlit 应用: {self.app_url}")
-        self.logger.info(f"当前时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        if attempt < max_attempts:
+            wait_seconds = attempt * 30
+            logger.info("Waiting %s seconds before retry", wait_seconds)
+            time.sleep(wait_seconds)
 
-        # 首先进行健康检查
-        if not self.check_app_health():
-            self.logger.warning("健康检查失败，但继续尝试 Selenium 访问")
-
-        driver = None
-        try:
-            driver = self.create_driver()
-            self.logger.info("正在访问应用...")
-
-            driver.get(self.app_url)
-            self.wait_for_page_load(driver)
-            self.interact_with_app(driver)
-
-            # 验证页面标题
-            title = driver.title
-            self.logger.info(f"页面标题: {title}")
-
-            # 检查是否成功加载 Streamlit 应用
-            if "Streamlit" in title or "streamlit" in driver.page_source.lower():
-                self.logger.info("✅ 应用唤醒成功!")
-                return True
-            else:
-                self.logger.warning("⚠️ 页面加载完成，但未检测到 Streamlit 应用特征")
-                return True  # 仍然算成功，因为页面加载了
-
-        except Exception as e:
-            self.logger.error(f"唤醒过程中出错: {str(e)}")
-            return False
-
-        finally:
-            if driver:
-                try:
-                    driver.quit()
-                    self.logger.info("WebDriver 已关闭")
-                except Exception as e:
-                    self.logger.warning(f"关闭 WebDriver 时出错: {str(e)}")
-
-    def run(self):
-        """主运行函数，包含重试逻辑"""
-        success = False
-
-        for attempt in range(1, self.max_retries + 1):
-            try:
-                self.logger.info(f"尝试唤醒应用 (尝试 {attempt}/{self.max_retries})")
-
-                if self.wake_up_app():
-                    success = True
-                    self.logger.info(f"🎉 第 {attempt} 次尝试成功!")
-                    break
-                else:
-                    self.logger.warning(f"第 {attempt} 次尝试失败")
-
-            except Exception as e:
-                self.logger.error(f"第 {attempt} 次尝试出现异常: {str(e)}")
-
-            if attempt < self.max_retries:
-                wait_time = 30 * attempt  # 递增等待时间
-                self.logger.info(f"等待 {wait_time} 秒后重试...")
-                time.sleep(wait_time)
-
-        if success:
-            self.logger.info("✅ 应用唤醒任务完成!")
-            return 0
-        else:
-            self.logger.error("❌ 应用唤醒任务失败!")
-            return 1
+    logger.error("Wake-up failed after %s attempts", max_attempts)
+    return 1
 
 
-def main():
-    """主函数"""
-    app_url = os.getenv('STREAMLIT_URL')
+def main() -> int:
+    raw_url = os.getenv("STREAMLIT_URL", "")
+    try:
+        url = normalize_url(raw_url)
+    except ValueError as exc:
+        logger.error("%s. Add this repository secret in GitHub Actions.", exc)
+        return 1
 
-    if not app_url:
-        print("❌ 错误: 未设置 STREAMLIT_URL 环境变量")
-        print("请在 GitHub Secrets 中设置 STREAMLIT_URL")
-        sys.exit(1)
-
-    print(f"🚀 开始唤醒 Streamlit 应用: {app_url}")
-
-    wake_up = StreamlitWakeUp(app_url)
-    exit_code = wake_up.run()
-
-    sys.exit(exit_code)
+    return wake_with_retries(url)
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
